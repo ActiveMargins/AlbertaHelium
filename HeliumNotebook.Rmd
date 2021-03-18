@@ -1,0 +1,80 @@
+---
+title: "Alberta Helium Data Exploration"
+output: html_notebook
+---
+
+This is a notebook for a project exploring the Alberta Geological Survey [Helium dataset released spring 2021](https://ags.aer.ca/publication/dig-2020-0033). This notebook will likely correpsond to a blogpost on my blog CouttsGeoData.
+
+Libraries
+```{r, message=FALSE}
+library(ggplot2)
+library(dplyr)
+library(leaflet)
+library(caret)
+```
+
+Loading the data .txt and seeing what all is included
+```{r}
+data <- read.table("~/R_data/HeliumAGSGit/DIG_2020_0033_Data.txt", sep="\t", header=TRUE)
+
+#Lets take a curosry look inside
+#There are 22168 gas analyses (rows) and 14 different gasses analyzed (columns) along with well UWI, location, and depth. All gasses are in molar fractions, moleFrac = moleGas/totalMoles     
+dim(data)
+head(data)
+
+```
+
+Bit of early data cleaning
+```{r}
+HeDF <- data %>% 
+  select(-SH_lat_83,-SH_long_83,-KB_el_m28,-Ttl_depth,-Smp_date, Smp_obs_no,-Well_type,-Top_MD_m,-Base_MD_m,-Top_tvd_m,-Base_tvd_m,-Publisher)
+HeDF[HeDF==-9999] <- NA
+sum(complete.cases(HeDF))
+  
+```
+
+Histogram of Helium values in the dataset to see how many of these are economical 3%
+```{r}
+econLim <- 0.03
+ggplot(data=HeDF, mapping=aes(x=He_conc)) + 
+  geom_histogram(binwidth = 0.005) + 
+  annotate("segment", x = econLim, xend = econLim, y = 0, yend = 12500, colour = "blue") + 
+  annotate("text", x = econLim-0.0015, y = 10000, label = "3% He concentration", size=3.5, angle=90) +
+  annotate("segment", x = 0.1, xend = 0.1, y = 0, yend = 7500, colour = "blue") + 
+  annotate("text", x = 0.1-0.0015, y = 4000, label = "Max concentration (10%)", size=3.5, angle=90) +
+  labs(x="Helium concentration (fraction of total gas)", y="Frequency", title="Frequency of He concentrations AGS dataset") +
+  theme_bw()
+
+```
+Biplot
+```{r}
+featurePlot(HeDF[,9:21],HeDF[,8], plot="scatter")
+```
+
+
+Only use complete cases to do PCA for shits
+```{r}
+HeComplete <- HeDF[complete.cases(HeDF),]
+HeComplete <- HeComplete %>% filter(He_conc>0.02 & He_conc<0.075)
+HePCA <- prcomp(HeComplete[,8:12], scale=TRUE)
+plot(HePCA)
+
+HePCA_X <- as.data.frame(HePCA$x)
+plot(HePCA_X$PC1,HePCA_X$PC2)
+```
+
+HeDF
+```{r}
+HeDFVis <- HeDF %>% 
+  filter(He_conc>0.03) %>% 
+  mutate(HeRad=5+(30*((He_conc-min(He_conc))/(max(He_conc)-min(He_conc)))))
+
+leaflet(data=HeDFVis) %>% 
+  addTiles() %>%
+  addCircleMarkers(lng=HeDFVis$BH_long_83, 
+                   lat=HeDFVis$BH_lat_83,
+                   stroke=FALSE,
+                   fillOpacity=0.5,
+                   radius=HeDFVis$HeRad)
+```
+
